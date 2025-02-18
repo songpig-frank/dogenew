@@ -84,12 +84,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             {
               id: authData.user.id,
               username,
-              is_anonymous: false,
+              created_at: new Date().toISOString(),
             },
           ]);
 
         if (profileError) throw profileError;
+
+        // Add default user role
+        const { error: roleError } = await supabase.from("user_roles").insert([
+          {
+            user_id: authData.user.id,
+            role: "user",
+          },
+        ]);
+
+        if (roleError) throw roleError;
       }
+
+      return authData;
     } catch (error) {
       console.error("Error in signUp:", error);
       throw error;

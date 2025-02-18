@@ -47,14 +47,24 @@ const LoginForm = () => {
     setError("");
     try {
       if (isSignUp) {
-        await signUp(emailOrUsername, password, username || "");
-        setError("Check your email for the confirmation link!");
+        if (!username) {
+          setError("Username is required");
+          return;
+        }
+        await signUp(emailOrUsername, password, username);
+        setError("Account created! You can now sign in.");
+        setIsSignUp(false);
         return;
       }
       await signIn(emailOrUsername, password);
       navigate("/");
     } catch (error) {
-      setError("Invalid email or password");
+      console.error("Auth error:", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "An error occurred during authentication",
+      );
     }
   };
 
