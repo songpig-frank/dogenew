@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark blue circular background -->
+  <circle cx="256" cy="256" r="240" fill="#1E293B"/>
+  
+  <!-- Blue striped background -->
+  <path d="M100 150 h312 v150 h-312 z" fill="#60A5FA" opacity="0.3"/>
+  <path d="M100 170 h312 M100 190 h312 M100 210 h312 M100 230 h312" stroke="#FFFFFF" stroke-width="1" opacity="0.2"/>
+  
+  <!-- Stars -->
+  <path d="M120 100 l5 15 l15 0 l-12 9 l5 15 l-13 -9 l-13 9 l5 -15 l-12 -9 l15 0 z" fill="#FFFFFF"/>
+  <path d="M400 100 l5 15 l15 0 l-12 9 l5 15 l-13 -9 l-13 9 l5 -15 l-12 -9 l15 0 z" fill="#FFFFFF"/>
+  <path d="M350 80 l5 15 l15 0 l-12 9 l5 15 l-13 -9 l-13 9 l5 -15 l-12 -9 l15 0 z" fill="#FFFFFF"/>
+  
+  <!-- Gold border -->
+  <circle cx="256" cy="256" r="240" stroke="#F59E0B" stroke-width="16" fill="none"/>
+  
+  <!-- Doge in suit -->
+  <path d="M200 150 C180 160 170 200 190 230 C210 260 230 270 256 270 C282 270 302 260 322 230 C342 200 332 160 312 150 C292 140 276 160 256 160 C236 160 220 140 200 150Z" fill="#FFFFFF"/>
+  <path d="M220 190 C220 190 230 200 256 200 C282 200 292 190 292 190" stroke="#1E293B" stroke-width="8" fill="none"/>
+  <circle cx="230" cy="170" r="8" fill="#1E293B"/>
+  <circle cx="282" cy="170" r="8" fill="#1E293B"/>
+  
+  <!-- Navy suit -->
+  <path d="M200 270 L190 400 L322 400 L312 270" fill="#0F172A"/>
+  <path d="M240 270 L245 400 M272 270 L267 400" stroke="#F59E0B" stroke-width="4"/>
+  
+  <!-- Chainsaw -->
+  <path d="M150 250 L350 250" stroke="#78716C" stroke-width="20"/>
+  <path d="M320 240 L380 240 L380 260 L320 260" fill="#78716C"/>
+  <path d="M350 235 L370 235 L370 265 L350 265" fill="#F59E0B"/>
+  
+  <!-- Text -->
+  <text x="256" y="450" fill="#FFFFFF" font-family="Arial Black, sans-serif" font-size="48" text-anchor="middle" font-weight="bold">DOGE CUTS</text>
+  <text x="256" y="480" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="20" text-anchor="middle">GOVERNMENT WASTE</text>
+</svg>

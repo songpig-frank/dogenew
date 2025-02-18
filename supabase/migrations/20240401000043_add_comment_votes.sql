@@ -1,0 +1,3 @@
+ALTER TABLE comments
+ADD COLUMN IF NOT EXISTS upvotes integer DEFAULT 0,
+ADD COLUMN IF NOT EXISTS downvotes integer DEFAULT 0;
