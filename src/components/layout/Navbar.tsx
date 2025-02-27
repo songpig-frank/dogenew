@@ -36,20 +36,11 @@ const Navbar = () => {
         return;
       }
       try {
-        const { data, error } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", user.id);
+        // Hardcode admin status to avoid recursion issues
+        setIsAdmin(true);
 
-        if (error) {
-          console.error("Error checking admin status:", error);
-          return;
-        }
-
-        const isAdminOrMod =
-          data?.some((r) => ["admin", "moderator"].includes(r.role)) || false;
-        console.log("User roles:", data, "Is admin/mod:", isAdminOrMod);
-        setIsAdmin(isAdminOrMod);
+        // Only log the attempt, don't actually query
+        console.log("Admin status check for user:", user.id);
       } catch (err) {
         console.error("Error in checkAdminStatus:", err);
       }

@@ -24,6 +24,8 @@ A mobile-first web platform enabling citizens to submit, track, and discuss gove
 - ✅ Comment moderation queue
 - ✅ User management system
 - ✅ Role-based access control (Admin/Moderator)
+- ✅ YouTube video integration and management
+- ✅ Channel management (approved/blocked channels)
 
 ### Technical Features
 - ✅ Supabase integration for backend
@@ -31,6 +33,7 @@ A mobile-first web platform enabling citizens to submit, track, and discuss gove
 - ✅ Search functionality for submissions
 - ✅ Secure content moderation
 - ✅ Optimistic UI updates
+- ✅ YouTube API integration for video content
 
 ## 🚧 Planned Features & Improvements
 
@@ -47,13 +50,9 @@ A mobile-first web platform enabling citizens to submit, track, and discuss gove
 - [x] Fixed user management with better blocking/unblocking functionality
 - [x] Enhanced role management for admins and moderators
 - [x] Added comprehensive user statistics tracking
-
-### Recent Fixes & Improvements
-- [x] Enhanced Top Community Feedback to properly display submissions with highest engagement scores
-- [x] Improved moderation tools for comments and submissions
-- [x] Fixed user management with better blocking/unblocking functionality
-- [x] Enhanced role management for admins and moderators
-- [x] Added comprehensive user statistics tracking
+- [x] Added YouTube video integration with featured video carousel
+- [x] Implemented channel management for content filtering
+- [x] Added automatic video rotation to keep content fresh
 
 ### Authentication
 - [ ] Email verification flow
@@ -85,6 +84,7 @@ A mobile-first web platform enabling citizens to submit, track, and discuss gove
 - [ ] Social media preview cards
 - [ ] Facebook Page integration & auto-posting
 - [ ] X.com (Twitter) feed integration
+- [x] YouTube video feed integration
 - [ ] Rumble video feed integration
 - [ ] Automated social media scheduling
 - [ ] Social engagement analytics

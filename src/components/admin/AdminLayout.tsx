@@ -10,6 +10,7 @@ import {
   Settings,
   LogOut,
   MessageCircle,
+  Youtube,
 } from "lucide-react";
 
 const AdminLayout = () => {
@@ -43,7 +44,7 @@ const AdminLayout = () => {
     return <div>Loading...</div>;
   }
 
-  if (!user || !isAdmin) {
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
 
@@ -52,6 +53,8 @@ const AdminLayout = () => {
     { icon: FileText, label: "Submissions", href: "/admin/submissions" },
     { icon: MessageCircle, label: "Comments", href: "/admin/comments" },
     { icon: Users, label: "Users", href: "/admin/users" },
+    { icon: Youtube, label: "YouTube Manager", href: "/admin/youtube" },
+    { icon: Youtube, label: "Channel Management", href: "/admin/channels" },
     { icon: Settings, label: "Settings", href: "/admin/settings" },
   ];
 

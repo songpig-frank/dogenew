@@ -1,11 +1,21 @@
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileText, Users, ThumbsUp, AlertTriangle } from "lucide-react";
+import {
+  FileText,
+  Users,
+  ThumbsUp,
+  AlertTriangle,
+  Youtube,
+  RotateCcw,
+} from "lucide-react";
 
 import SocialAnalytics from "./SocialAnalytics";
 import ModeratorStats from "./ModeratorStats";
 import ModeratorDashboard from "./ModeratorDashboard";
+import FeaturedVideos from "./FeaturedVideos";
+import { rotateVideos } from "@/lib/video-rotation";
+import { useToast } from "@/components/ui/use-toast";
 
 const statsCards = [
   {
@@ -37,6 +47,29 @@ const statsCards = [
 import { setupTestData } from "@/lib/setupTestData";
 
 const Dashboard = () => {
+  const { toast } = useToast();
+  const [isRotating, setIsRotating] = React.useState(false);
+
+  const handleRotateVideos = async () => {
+    try {
+      setIsRotating(true);
+      const result = await rotateVideos();
+      toast({
+        title: "Video Rotation Complete",
+        description: `Kept ${result.kept} videos, removed ${result.removed} old videos.`,
+      });
+    } catch (err) {
+      console.error("Error rotating videos:", err);
+      toast({
+        title: "Error",
+        description: "Failed to rotate videos. See console for details.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRotating(false);
+    }
+  };
+
   return (
     <div>
       <div className="flex gap-4 mb-6">
@@ -58,6 +91,23 @@ const Dashboard = () => {
           }}
         >
           Create Test Data
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => (window.location.href = "/admin/youtube")}
+        >
+          <Youtube className="h-4 w-4 mr-2" />
+          YouTube Manager
+        </Button>
+        <Button
+          variant="outline"
+          onClick={handleRotateVideos}
+          disabled={isRotating}
+        >
+          <RotateCcw
+            className={`h-4 w-4 mr-2 ${isRotating ? "animate-spin" : ""}`}
+          />
+          Rotate Videos
         </Button>
       </div>
       <h1 className="text-2xl font-bold mb-6">Dashboard Overview</h1>
@@ -82,6 +132,15 @@ const Dashboard = () => {
       </div>
 
       <div className="mt-8 space-y-8">
+        <FeaturedVideos />
+        <div className="flex justify-end mt-4">
+          <Button
+            variant="outline"
+            onClick={() => (window.location.href = "/admin/youtube")}
+          >
+            Add More Videos
+          </Button>
+        </div>
         <ModeratorStats />
         <ModeratorDashboard />
         <SocialAnalytics />

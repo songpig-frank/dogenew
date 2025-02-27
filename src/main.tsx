@@ -7,6 +7,7 @@ import { BrowserRouter } from "react-router-dom";
 import { TempoDevtools } from "tempo-devtools";
 import { scheduleNewsUpdates } from "./lib/automation/newsFeeds";
 import { scheduleModerationQueue } from "./lib/automation/moderationQueue";
+import { scheduleVideoRotation } from "./lib/video-rotation";
 
 TempoDevtools.init();
 
@@ -14,6 +15,7 @@ TempoDevtools.init();
 if (process.env.NODE_ENV === "production") {
   scheduleNewsUpdates();
   scheduleModerationQueue();
+  scheduleVideoRotation();
 }
 
 const basename = import.meta.env.BASE_URL;
