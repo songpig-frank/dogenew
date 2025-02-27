@@ -23,16 +23,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Copy } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/AuthProvider";
+import AnonymousToggle from "./AnonymousToggle";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -40,6 +34,7 @@ const formSchema = z.object({
   title: z.string().min(2).max(100),
   description: z.string().min(10).max(1000),
   category: z.enum(["Praise", "Complaint", "Recommendation"]),
+  is_anonymous: z.boolean().default(false),
 });
 
 interface SubmissionFormProps {
@@ -51,10 +46,7 @@ const defaultValues: z.infer<typeof formSchema> = {
   title: "",
   description: "",
   category: "Recommendation",
-};
-
-const copyToClipboard = (text: string) => {
-  navigator.clipboard.writeText(text);
+  is_anonymous: false,
 };
 
 const SubmissionForm = ({
@@ -63,7 +55,6 @@ const SubmissionForm = ({
 }: SubmissionFormProps) => {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [dialogError, setDialogError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<boolean>(false);
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -106,6 +97,24 @@ const SubmissionForm = ({
         });
       }
 
+      // First update user profile with display name if needed
+      if (user?.id && username) {
+        // Get existing profile first
+        const { data: existingProfile } = await supabase
+          .from("user_profiles")
+          .select("username, display_name, email")
+          .eq("id", user.id)
+          .single();
+
+        await supabase.from("user_profiles").upsert({
+          id: user.id,
+          username: username,
+          // Only update display_name if it doesn't exist or is the same as the old username
+          display_name: existingProfile?.display_name || username,
+          email: user.email,
+        });
+      }
+
       // Insert into Supabase
       const { data, error: supabaseError } = await supabase
         .from("submissions")
@@ -118,7 +127,10 @@ const SubmissionForm = ({
             comments: 0,
             status: "pending",
             user_id: user?.id,
-            username: username || "Anonymous",
+            username: values.is_anonymous
+              ? "Anonymous"
+              : username || "Anonymous",
+            is_anonymous: values.is_anonymous,
           },
         ])
         .select();
@@ -268,6 +280,25 @@ const SubmissionForm = ({
                 )}
               />
 
+              <FormField
+                control={form.control}
+                name="is_anonymous"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                    <FormControl>
+                      <AnonymousToggle
+                        isAnonymous={field.value}
+                        onChange={field.onChange}
+                      />
+                    </FormControl>
+                    <FormDescription className="mt-0">
+                      Your email will only be visible to administrators and
+                      moderators.
+                    </FormDescription>
+                  </FormItem>
+                )}
+              />
+
               <div className="space-y-4">
                 {error && <p className="text-sm text-destructive">{error}</p>}
                 {success && (
@@ -276,81 +307,6 @@ const SubmissionForm = ({
                   </p>
                 )}
                 <div className="flex justify-between items-center">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="bg-blue-500 hover:bg-blue-600 text-white"
-                    onClick={async () => {
-                      try {
-                        console.log("Testing connection...");
-                        console.log("Supabase URL:", supabaseUrl);
-                        console.log("Anon Key exists:", !!supabaseAnonKey);
-
-                        // First test the connection
-                        const { error: pingError } = await supabase
-                          .from("submissions")
-                          .select("count")
-                          .limit(1);
-
-                        if (pingError) {
-                          console.error("Connection test failed:", pingError);
-                          throw pingError;
-                        }
-
-                        console.log(
-                          "Connection test successful, attempting insert...",
-                        );
-
-                        const { data, error } = await supabase
-                          .from("submissions")
-                          .insert([
-                            {
-                              title: "Test Submission",
-                              description: "This is a test submission",
-                              category: "Recommendation",
-                              likes: 0,
-                              comments: 0,
-                            },
-                          ])
-                          .select();
-
-                        if (error) throw error;
-                        console.log("Test successful:", data);
-                        alert("Test successful! Check console for details.");
-                      } catch (err) {
-                        console.error("Test failed:", err);
-                        const errorDetails = {
-                          error: {
-                            message: err.message,
-                            name: err.name,
-                            code: err.code,
-                            details: err.details,
-                          },
-                          config: {
-                            supabaseUrl,
-                            hasAnonKey: !!supabaseAnonKey,
-                            timestamp: new Date().toISOString(),
-                          },
-                          // Add any response details if available
-                          response: err.response
-                            ? {
-                                status: err.response.status,
-                                statusText: err.response.statusText,
-                                data: err.response.data,
-                              }
-                            : undefined,
-                        };
-                        const errorMessage = JSON.stringify(
-                          errorDetails,
-                          null,
-                          2,
-                        );
-                        setDialogError(errorMessage);
-                      }
-                    }}
-                  >
-                    🔍 Test Database Connection
-                  </Button>
                   <Button
                     type="button"
                     variant="outline"
@@ -366,41 +322,6 @@ const SubmissionForm = ({
               </div>
             </form>
           </Form>
-
-          <Dialog
-            open={!!dialogError}
-            onOpenChange={() => setDialogError(null)}
-          >
-            <DialogContent
-              className="max-w-3xl"
-              description="Details about the connection test error"
-            >
-              <DialogHeader>
-                <DialogTitle>Connection Test Error</DialogTitle>
-                <p className="text-sm text-muted-foreground">
-                  The connection to Supabase failed. Details below:
-                </p>
-              </DialogHeader>
-              <div className="bg-muted p-4 rounded-md relative">
-                <pre className="whitespace-pre-wrap overflow-auto max-h-[400px] text-sm">
-                  {dialogError}
-                </pre>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="absolute top-2 right-2"
-                  onClick={() => {
-                    if (dialogError) {
-                      copyToClipboard(dialogError);
-                      alert("Error details copied to clipboard!");
-                    }
-                  }}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
         </CardContent>
       </Card>
     </div>

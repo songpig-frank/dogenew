@@ -1,6 +1,7 @@
 import React from "react";
 import Navbar from "./layout/Navbar";
 import TrendingSection from "./trending/TrendingSection";
+import TopCommunityFeedback from "./trending/TopCommunityFeedback";
 import { useTheme } from "@/lib/utils";
 
 interface HomeProps {
@@ -51,6 +52,9 @@ const Home = ({ initialTheme = "light" }: HomeProps) => {
               </a>
             </div>
           </section>
+
+          {/* Top Community Feedback Section */}
+          <TopCommunityFeedback />
 
           {/* Trending Section */}
           <TrendingSection />

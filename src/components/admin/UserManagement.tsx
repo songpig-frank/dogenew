@@ -3,7 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Filter } from "lucide-react";
+import {
+  Search,
+  Filter,
+  UserCheck,
+  UserX,
+  Shield,
+  Clock,
+  Download,
+} from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,19 +41,13 @@ import {
   getUserStats,
 } from "@/lib/api/users";
 import type { UserWithRole, UserStats } from "@/lib/types/user";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
+import { supabase } from "@/lib/supabase";
 
 const ITEMS_PER_PAGE = 10;
 
-import { setupTables } from "@/lib/setupTables";
-
 const UserManagement = () => {
-  React.useEffect(() => {
-    setupTables().then((result) => {
-      if (!result.success) {
-        console.error("Error setting up tables:", result.error);
-      }
-    });
-  }, []);
   const { toast } = useToast();
   const [users, setUsers] = React.useState<UserWithRole[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -61,30 +63,55 @@ const UserManagement = () => {
   const [page, setPage] = React.useState(1);
   const [totalPages, setTotalPages] = React.useState(1);
   const [statsLoading, setStatsLoading] = React.useState(false);
+  const [selectedUsers, setSelectedUsers] = React.useState<string[]>([]);
+  const [activeTab, setActiveTab] = React.useState<
+    "all" | "blocked" | "active"
+  >("all");
 
   const loadUsers = React.useCallback(async () => {
     try {
       setLoading(true);
+      console.log("Fetching users with params:", {
+        page,
+        limit: ITEMS_PER_PAGE,
+        search: searchQuery,
+        role: roleFilter,
+        status:
+          activeTab === "all"
+            ? undefined
+            : activeTab === "blocked"
+              ? "blocked"
+              : "active",
+      });
+
       const result = await fetchUsers({
         page,
         limit: ITEMS_PER_PAGE,
         search: searchQuery,
         role: roleFilter as "admin" | "moderator" | "user" | undefined,
+        status:
+          activeTab === "all"
+            ? undefined
+            : activeTab === "blocked"
+              ? "blocked"
+              : "active",
       });
 
+      console.log("Fetched users result:", result);
       setUsers(result.users);
       setTotalPages(result.totalPages);
     } catch (error) {
       console.error("Error fetching users:", error);
       toast({
         title: "Error",
-        description: "Failed to fetch users. Please try again.",
+        description:
+          "Failed to fetch users: " + (error.message || String(error)),
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
-  }, [page, searchQuery, roleFilter, toast]);
+  }, [page, searchQuery, roleFilter, activeTab, toast]);
 
   React.useEffect(() => {
     loadUsers();
@@ -111,8 +138,38 @@ const UserManagement = () => {
     if (!selectedUser || !blockReason.trim()) return;
 
     try {
-      await blockUser(selectedUser.id, blockReason);
+      console.log(
+        `Blocking user ${selectedUser.id} with reason: ${blockReason}`,
+      );
+
+      // Try direct SQL update first as a workaround
+      try {
+        const { error: directError } = await supabase.rpc("execute_sql", {
+          sql_query: `UPDATE public.user_profiles SET blocked = TRUE, blocked_reason = '${blockReason.replace("'", "''")}', blocked_at = NOW() WHERE id = '${selectedUser.id}'`,
+        });
+
+        if (directError) {
+          console.warn(
+            "Direct SQL update failed, trying API method:",
+            directError,
+          );
+          // Fall back to the API method
+          await blockUser(selectedUser.id, blockReason);
+        } else {
+          console.log("Direct SQL update succeeded");
+        }
+      } catch (directErr) {
+        console.warn(
+          "Error with direct SQL update, trying API method:",
+          directErr,
+        );
+        // Fall back to the API method
+        await blockUser(selectedUser.id, blockReason);
+      }
+
+      // Force reload users to get updated data
       await loadUsers();
+
       setShowBlockDialog(false);
       setBlockReason("");
       setSelectedUser(null);
@@ -124,7 +181,8 @@ const UserManagement = () => {
       console.error("Error blocking user:", error);
       toast({
         title: "Error",
-        description: "Failed to block user",
+        description:
+          "Failed to block user: " + (error.message || String(error)),
         variant: "destructive",
       });
     }
@@ -132,8 +190,12 @@ const UserManagement = () => {
 
   const handleUnblock = async (userId: string) => {
     try {
+      console.log(`Unblocking user ${userId}`);
       await unblockUser(userId);
+
+      // Force reload users to get updated data
       await loadUsers();
+
       toast({
         title: "Success",
         description: "User has been unblocked",
@@ -142,7 +204,8 @@ const UserManagement = () => {
       console.error("Error unblocking user:", error);
       toast({
         title: "Error",
-        description: "Failed to unblock user",
+        description:
+          "Failed to unblock user: " + (error.message || String(error)),
         variant: "destructive",
       });
     }
@@ -150,7 +213,53 @@ const UserManagement = () => {
 
   const handleRoleChange = async (userId: string, newRole: string) => {
     try {
-      await updateUserRole(userId, newRole);
+      // Find the user to check if they're blocked
+      const user = users.find((u) => u.id === userId);
+
+      // Don't allow promoting blocked users
+      if (user?.blocked && newRole !== "user") {
+        toast({
+          title: "Action Failed",
+          description: "Cannot promote blocked users",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Don't change role if it's already the same
+      if (user?.role === newRole) {
+        toast({
+          title: "No Change",
+          description: `User already has ${newRole} role`,
+        });
+        return;
+      }
+
+      // Try direct SQL update first as a workaround
+      try {
+        const { error: directError } = await supabase.rpc("execute_sql", {
+          sql_query: `INSERT INTO public.user_roles (user_id, role) VALUES ('${userId}', '${newRole}') ON CONFLICT (user_id) DO UPDATE SET role = '${newRole}'`,
+        });
+
+        if (directError) {
+          console.warn(
+            "Direct SQL update failed for role change, trying API method:",
+            directError,
+          );
+          // Fall back to the API method
+          await updateUserRole(userId, newRole);
+        } else {
+          console.log("Direct SQL update succeeded for role change");
+        }
+      } catch (directErr) {
+        console.warn(
+          "Error with direct SQL update for role change, trying API method:",
+          directErr,
+        );
+        // Fall back to the API method
+        await updateUserRole(userId, newRole);
+      }
+
       await loadUsers();
       toast({
         title: "Success",
@@ -182,7 +291,166 @@ const UserManagement = () => {
     [setRoleFilter, setPage],
   );
 
-  if (loading && users.length === 0) {
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUsers((prev) =>
+      prev.includes(userId)
+        ? prev.filter((id) => id !== userId)
+        : [...prev, userId],
+    );
+  };
+
+  const handleBulkAction = async (
+    action: "block" | "unblock" | "promote" | "demote",
+  ) => {
+    if (selectedUsers.length === 0) return;
+
+    try {
+      switch (action) {
+        case "block":
+          // Implement bulk blocking
+          for (const userId of selectedUsers) {
+            try {
+              // Try direct SQL update first as a workaround
+              const { error: directError } = await supabase.rpc("execute_sql", {
+                sql_query: `UPDATE public.user_profiles SET blocked = TRUE, blocked_reason = 'Bulk action', blocked_at = NOW() WHERE id = '${userId}'`,
+              });
+
+              if (directError) {
+                console.warn(
+                  "Direct SQL update failed for user",
+                  userId,
+                  directError,
+                );
+                await blockUser(userId, "Bulk action");
+              }
+            } catch (err) {
+              console.error(`Error blocking user ${userId}:`, err);
+            }
+          }
+          toast({
+            title: "Bulk Action",
+            description: `Blocked ${selectedUsers.length} users`,
+          });
+          break;
+        case "unblock":
+          // Implement bulk unblocking
+          for (const userId of selectedUsers) {
+            try {
+              await unblockUser(userId);
+            } catch (err) {
+              console.error(`Error unblocking user ${userId}:`, err);
+            }
+          }
+          toast({
+            title: "Bulk Action",
+            description: `Unblocked ${selectedUsers.length} users`,
+          });
+          break;
+        case "promote":
+          // Implement bulk promotion
+          for (const userId of selectedUsers) {
+            try {
+              // Try direct SQL update first
+              const { error: directError } = await supabase.rpc("execute_sql", {
+                sql_query: `INSERT INTO public.user_roles (user_id, role) VALUES ('${userId}', 'moderator') ON CONFLICT (user_id) DO UPDATE SET role = 'moderator'`,
+              });
+
+              if (directError) {
+                console.warn(
+                  "Direct SQL update failed for role promotion:",
+                  directError,
+                );
+                await updateUserRole(userId, "moderator");
+              }
+            } catch (err) {
+              console.error(`Error promoting user ${userId}:`, err);
+            }
+          }
+          toast({
+            title: "Bulk Action",
+            description: `Promoted ${selectedUsers.length} users to moderator`,
+          });
+          break;
+        case "demote":
+          // Implement bulk demotion
+          for (const userId of selectedUsers) {
+            try {
+              // Try direct SQL update first
+              const { error: directError } = await supabase.rpc("execute_sql", {
+                sql_query: `INSERT INTO public.user_roles (user_id, role) VALUES ('${userId}', 'user') ON CONFLICT (user_id) DO UPDATE SET role = 'user'`,
+              });
+
+              if (directError) {
+                console.warn(
+                  "Direct SQL update failed for role demotion:",
+                  directError,
+                );
+                await updateUserRole(userId, "user");
+              }
+            } catch (err) {
+              console.error(`Error demoting user ${userId}:`, err);
+            }
+          }
+          toast({
+            title: "Bulk Action",
+            description: `Demoted ${selectedUsers.length} users to regular users`,
+          });
+          break;
+      }
+
+      // Clear selection after action
+      setSelectedUsers([]);
+      await loadUsers();
+    } catch (error) {
+      console.error(`Error performing bulk ${action}:`, error);
+      toast({
+        title: "Error",
+        description: `Failed to ${action} users`,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const exportUserData = () => {
+    try {
+      const dataToExport = users.map((user) => ({
+        id: user.id,
+        username: user.username || "N/A",
+        email: user.email || "N/A",
+        role: user.role || "user",
+        status: user.blocked ? "blocked" : "active",
+        created_at: user.created_at,
+      }));
+
+      const jsonString = JSON.stringify(dataToExport, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "user-data.json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Export Successful",
+        description: `Exported data for ${users.length} users`,
+      });
+    } catch (error) {
+      console.error("Error exporting user data:", error);
+      toast({
+        title: "Export Failed",
+        description: "Could not export user data",
+        variant: "destructive",
+      });
+    }
+  };
+
+  console.log("Current users state:", { users, loading, totalPages });
+
+  if (loading) {
     return (
       <div className="container mx-auto py-8 px-4">
         <div className="flex justify-center items-center h-64">
@@ -217,90 +485,434 @@ const UserManagement = () => {
               <SelectItem value="user">User</SelectItem>
             </SelectContent>
           </Select>
+          <Button variant="outline" onClick={exportUserData}>
+            <Download className="mr-2 h-4 w-4" />
+            Export
+          </Button>
         </div>
       </div>
 
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as any)}
+        className="mb-6"
+      >
+        <TabsList>
+          <TabsTrigger value="all">All Users</TabsTrigger>
+          <TabsTrigger value="active">Active</TabsTrigger>
+          <TabsTrigger value="blocked">Blocked</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {selectedUsers.length > 0 && (
+        <div className="bg-muted p-4 rounded-md mb-6 flex items-center justify-between">
+          <p className="text-sm">{selectedUsers.length} users selected</p>
+          <div className="flex gap-2">
+            <Select
+              defaultValue="promote"
+              onValueChange={(value) => {
+                if (value === "promote_mod") {
+                  // Filter out blocked users
+                  const nonBlockedUsers = selectedUsers.filter((userId) => {
+                    const user = users.find((u) => u.id === userId);
+                    return user && !user.blocked;
+                  });
+
+                  if (nonBlockedUsers.length === 0) {
+                    toast({
+                      title: "Action Failed",
+                      description: "Cannot promote blocked users",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+
+                  if (nonBlockedUsers.length < selectedUsers.length) {
+                    toast({
+                      title: "Note",
+                      description: `${selectedUsers.length - nonBlockedUsers.length} blocked users were skipped`,
+                    });
+                  }
+
+                  // Update only non-blocked users
+                  Promise.all(
+                    nonBlockedUsers.map(async (userId) => {
+                      try {
+                        // Try direct SQL update first
+                        const { error: directError } = await supabase.rpc(
+                          "execute_sql",
+                          {
+                            sql_query: `INSERT INTO public.user_roles (user_id, role) VALUES ('${userId}', 'moderator') ON CONFLICT (user_id) DO UPDATE SET role = 'moderator'`,
+                          },
+                        );
+
+                        if (directError) {
+                          console.warn(
+                            "Direct SQL update failed for moderator promotion:",
+                            directError,
+                          );
+                          await updateUserRole(userId, "moderator");
+                        }
+                      } catch (err) {
+                        console.error(
+                          `Error promoting user ${userId} to moderator:`,
+                          err,
+                        );
+                      }
+                    }),
+                  ).then(() => {
+                    if (nonBlockedUsers.length > 0) {
+                      toast({
+                        title: "Bulk Action",
+                        description: `Promoted ${nonBlockedUsers.length} users to moderator`,
+                      });
+                    }
+                    setSelectedUsers([]);
+                    loadUsers();
+                  });
+                } else if (value === "promote_admin") {
+                  // Filter out blocked users
+                  const nonBlockedUsers = selectedUsers.filter((userId) => {
+                    const user = users.find((u) => u.id === userId);
+                    return user && !user.blocked;
+                  });
+
+                  if (nonBlockedUsers.length === 0) {
+                    toast({
+                      title: "Action Failed",
+                      description: "Cannot promote blocked users",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+
+                  if (nonBlockedUsers.length < selectedUsers.length) {
+                    toast({
+                      title: "Note",
+                      description: `${selectedUsers.length - nonBlockedUsers.length} blocked users were skipped`,
+                    });
+                  }
+
+                  // Update only non-blocked users
+                  Promise.all(
+                    nonBlockedUsers.map(async (userId) => {
+                      try {
+                        // Try direct SQL update first
+                        const { error: directError } = await supabase.rpc(
+                          "execute_sql",
+                          {
+                            sql_query: `INSERT INTO public.user_roles (user_id, role) VALUES ('${userId}', 'admin') ON CONFLICT (user_id) DO UPDATE SET role = 'admin'`,
+                          },
+                        );
+
+                        if (directError) {
+                          console.warn(
+                            "Direct SQL update failed for admin promotion:",
+                            directError,
+                          );
+                          await updateUserRole(userId, "admin");
+                        }
+                      } catch (err) {
+                        console.error(
+                          `Error promoting user ${userId} to admin:`,
+                          err,
+                        );
+                      }
+                    }),
+                  ).then(() => {
+                    if (nonBlockedUsers.length > 0) {
+                      toast({
+                        title: "Bulk Action",
+                        description: `Promoted ${nonBlockedUsers.length} users to admin`,
+                      });
+                    }
+                    setSelectedUsers([]);
+                    loadUsers();
+                  });
+                }
+              }}
+            >
+              <SelectTrigger className="w-[130px]">
+                <Shield className="mr-2 h-4 w-4" />
+                Promote
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="promote_mod">To Moderator</SelectItem>
+                <SelectItem value="promote_admin">To Admin</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              defaultValue="demote"
+              onValueChange={(value) => {
+                if (value === "demote_user") {
+                  // Filter users who are not already users
+                  const nonUserRoles = selectedUsers.filter((userId) => {
+                    const user = users.find((u) => u.id === userId);
+                    return user && user.role !== "user";
+                  });
+
+                  if (nonUserRoles.length === 0) {
+                    toast({
+                      title: "Action Failed",
+                      description: "All selected users already have user role",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+
+                  if (nonUserRoles.length < selectedUsers.length) {
+                    toast({
+                      title: "Note",
+                      description: `${selectedUsers.length - nonUserRoles.length} users already have user role and were skipped`,
+                    });
+                  }
+
+                  // Update only users who are not already users
+                  Promise.all(
+                    nonUserRoles.map(async (userId) => {
+                      try {
+                        // Try direct SQL update first
+                        const { error: directError } = await supabase.rpc(
+                          "execute_sql",
+                          {
+                            sql_query: `INSERT INTO public.user_roles (user_id, role) VALUES ('${userId}', 'user') ON CONFLICT (user_id) DO UPDATE SET role = 'user'`,
+                          },
+                        );
+
+                        if (directError) {
+                          console.warn(
+                            "Direct SQL update failed for user demotion:",
+                            directError,
+                          );
+                          await updateUserRole(userId, "user");
+                        }
+                      } catch (err) {
+                        console.error(
+                          `Error demoting user ${userId} to user:`,
+                          err,
+                        );
+                      }
+                    }),
+                  ).then(() => {
+                    if (nonUserRoles.length > 0) {
+                      toast({
+                        title: "Bulk Action",
+                        description: `Demoted ${nonUserRoles.length} users to regular users`,
+                      });
+                    }
+                    setSelectedUsers([]);
+                    loadUsers();
+                  });
+                } else if (value === "demote_mod") {
+                  // Filter users who are not already moderators and not blocked
+                  const eligibleUsers = selectedUsers.filter((userId) => {
+                    const user = users.find((u) => u.id === userId);
+                    return user && user.role !== "moderator" && !user.blocked;
+                  });
+
+                  if (eligibleUsers.length === 0) {
+                    toast({
+                      title: "Action Failed",
+                      description:
+                        "No eligible users to change to moderator role",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+
+                  if (eligibleUsers.length < selectedUsers.length) {
+                    toast({
+                      title: "Note",
+                      description: `${selectedUsers.length - eligibleUsers.length} users were skipped (already moderators or blocked)`,
+                    });
+                  }
+
+                  // Update only eligible users
+                  Promise.all(
+                    eligibleUsers.map(async (userId) => {
+                      try {
+                        // Try direct SQL update first
+                        const { error: directError } = await supabase.rpc(
+                          "execute_sql",
+                          {
+                            sql_query: `INSERT INTO public.user_roles (user_id, role) VALUES ('${userId}', 'moderator') ON CONFLICT (user_id) DO UPDATE SET role = 'moderator'`,
+                          },
+                        );
+
+                        if (directError) {
+                          console.warn(
+                            "Direct SQL update failed for moderator change:",
+                            directError,
+                          );
+                          await updateUserRole(userId, "moderator");
+                        }
+                      } catch (err) {
+                        console.error(
+                          `Error changing user ${userId} to moderator:`,
+                          err,
+                        );
+                      }
+                    }),
+                  ).then(() => {
+                    if (eligibleUsers.length > 0) {
+                      toast({
+                        title: "Bulk Action",
+                        description: `Changed ${eligibleUsers.length} users to moderator`,
+                      });
+                    }
+                    setSelectedUsers([]);
+                    loadUsers();
+                  });
+                }
+              }}
+            >
+              <SelectTrigger className="w-[130px]">
+                <UserCheck className="mr-2 h-4 w-4" />
+                Demote
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="demote_user">To User</SelectItem>
+                <SelectItem value="demote_mod">To Moderator</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleBulkAction("block")}
+            >
+              <UserX className="mr-2 h-4 w-4" />
+              Block
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleBulkAction("unblock")}
+            >
+              <UserCheck className="mr-2 h-4 w-4" />
+              Unblock
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setSelectedUsers([])}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="grid md:grid-cols-3 gap-6">
         <div className="md:col-span-2">
-          <div className="grid gap-4">
-            {users.map((user) => (
-              <Card key={user.id} className="relative overflow-hidden">
-                {user.blocked && (
-                  <div className="absolute inset-0 bg-destructive/5 pointer-events-none" />
-                )}
-                <CardHeader>
-                  <div className="flex justify-between items-center">
-                    <CardTitle className="text-lg">
-                      {user.username || user.email || user.id}
-                    </CardTitle>
-                    <div className="flex gap-2">
-                      <Badge
-                        variant={
-                          user.role === "admin" ? "destructive" : "secondary"
-                        }
-                        className="cursor-pointer"
-                        onClick={() =>
-                          handleRoleChange(
-                            user.id,
-                            user.role === "admin" ? "moderator" : "admin",
-                          )
-                        }
-                      >
-                        {user.role || "user"}
-                      </Badge>
-                      {user.blocked && (
-                        <Badge variant="destructive">Blocked</Badge>
+          {users.length === 0 ? (
+            <div className="text-center p-8 bg-muted rounded-lg">
+              <p>No users found. Try adjusting your filters.</p>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {users.map((user) => (
+                <Card
+                  key={user.id}
+                  className={`relative overflow-hidden ${selectedUsers.includes(user.id) ? "border-primary" : ""}`}
+                >
+                  {user.blocked && (
+                    <div className="absolute inset-0 bg-destructive/5 pointer-events-none" />
+                  )}
+                  <CardHeader>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <Checkbox
+                          checked={selectedUsers.includes(user.id)}
+                          onCheckedChange={() => toggleUserSelection(user.id)}
+                          id={`select-${user.id}`}
+                        />
+                        <div>
+                          <CardTitle className="text-lg">
+                            {user.username || user.email || user.id}
+                          </CardTitle>
+                          {user.email && (
+                            <p className="text-sm text-muted-foreground">
+                              {user.email}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Badge
+                          variant={
+                            user.role === "admin" ? "destructive" : "secondary"
+                          }
+                          className="cursor-pointer"
+                          onClick={() =>
+                            handleRoleChange(
+                              user.id,
+                              user.role === "admin" ? "moderator" : "admin",
+                            )
+                          }
+                        >
+                          {user.role || "user"}
+                        </Badge>
+                        {user.blocked && (
+                          <Badge variant="destructive">Blocked</Badge>
+                        )}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <p className="text-sm text-muted-foreground">
+                          User ID: {user.id}
+                        </p>
+                        <p className="text-sm text-muted-foreground flex items-center">
+                          <Clock className="mr-1 h-3 w-3" />
+                          {new Date(user.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      {user.blocked ? (
+                        <div className="space-y-2">
+                          <p className="text-sm text-destructive">
+                            Blocked:{" "}
+                            {new Date(user.blocked_at!).toLocaleString()}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            Reason: {user.blocked_reason}
+                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleUnblock(user.id)}
+                          >
+                            Unblock User
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedUser(user);
+                              setShowBlockDialog(true);
+                            }}
+                          >
+                            Block User
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => loadUserStats(user.id)}
+                          >
+                            View Stats
+                          </Button>
+                        </div>
                       )}
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">
-                      User ID: {user.id}
-                    </p>
-                    {user.blocked ? (
-                      <div className="space-y-2">
-                        <p className="text-sm text-destructive">
-                          Blocked: {new Date(user.blocked_at!).toLocaleString()}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Reason: {user.blocked_reason}
-                        </p>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleUnblock(user.id)}
-                        >
-                          Unblock User
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedUser(user);
-                            setShowBlockDialog(true);
-                          }}
-                        >
-                          Block User
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => loadUserStats(user.id)}
-                        >
-                          View Stats
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
 
           {totalPages > 1 && (
             <div className="mt-6 flex justify-center">

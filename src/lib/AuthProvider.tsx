@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Username already taken");
       }
 
-      // Create auth user
+      // Create auth user with username in metadata
       const { data: authData, error: signUpError } = await supabase.auth.signUp(
         {
           email,
@@ -76,30 +76,67 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (signUpError) throw signUpError;
 
-      // Create user profile
+      // Manually create user profile in case the trigger fails
       if (authData.user) {
-        const { error: profileError } = await supabase
-          .from("user_profiles")
-          .insert([
-            {
-              id: authData.user.id,
-              username,
-              created_at: new Date().toISOString(),
-            },
-          ]);
+        try {
+          // Try to create the profile with a unique username if needed
+          let uniqueUsername = username;
+          let counter = 0;
+          let profileCreated = false;
 
-        if (profileError) throw profileError;
+          while (!profileCreated && counter < 10) {
+            // Limit attempts to avoid infinite loop
+            try {
+              const { error: upsertError } = await supabase
+                .from("user_profiles")
+                .upsert({
+                  id: authData.user.id,
+                  username: uniqueUsername,
+                  display_name: username, // Keep original username as display name
+                  email: email,
+                  created_at: new Date().toISOString(),
+                });
 
-        // Add default user role
-        const { error: roleError } = await supabase.from("user_roles").insert([
-          {
+              if (!upsertError) {
+                profileCreated = true;
+                console.log(`Profile created with username: ${uniqueUsername}`);
+              } else if (upsertError.code === "23505") {
+                // Unique violation
+                counter++;
+                uniqueUsername = `${username}${counter}`;
+                console.log(`Username taken, trying: ${uniqueUsername}`);
+              } else {
+                throw upsertError;
+              }
+            } catch (err) {
+              if (err.code === "23505") {
+                // Unique violation
+                counter++;
+                uniqueUsername = `${username}${counter}`;
+                console.log(`Username taken, trying: ${uniqueUsername}`);
+              } else {
+                throw err;
+              }
+            }
+          }
+
+          // Also create user role
+          await supabase.from("user_roles").upsert({
             user_id: authData.user.id,
             role: "user",
-          },
-        ]);
-
-        if (roleError) throw roleError;
+          });
+        } catch (profileError) {
+          console.warn("Error creating profile manually:", profileError);
+          // Continue anyway as the auth user was created
+        }
       }
+
+      // Log the successful signup
+      console.log("User signed up successfully:", {
+        id: authData.user?.id,
+        email: authData.user?.email,
+        username,
+      });
 
       return authData;
     } catch (error) {

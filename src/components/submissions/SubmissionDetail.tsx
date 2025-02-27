@@ -35,6 +35,19 @@ import {
 
 import ShareDialog from "@/components/shared/ShareDialog";
 
+export interface Submission {
+  id: string;
+  title: string;
+  description: string;
+  category: "Praise" | "Complaint" | "Recommendation";
+  likes: number;
+  comments: number;
+  created_at: string;
+  username?: string;
+  is_anonymous?: boolean;
+  email?: string;
+}
+
 interface Comment {
   id: string;
   content: string;
@@ -44,6 +57,7 @@ interface Comment {
   upvotes: number;
   downvotes: number;
   username?: string;
+  is_anonymous?: boolean;
 }
 
 const SubmissionDetail = () => {
@@ -84,96 +98,19 @@ const SubmissionDetail = () => {
   const fetchComments = async () => {
     if (!id) return;
     try {
-      // Step 1: Test basic connection
-      const { data: testData, error: testError } = await supabase
-        .from("comments")
-        .select("count");
-
-      let debugInfo = "Step 1 - Basic Connection Test:\n";
-      if (testError) {
-        debugInfo += `❌ Error: ${testError.message}\n`;
-      } else {
-        debugInfo += `✅ Success! Found ${testData[0]?.count || 0} total comments\n`;
-      }
-
-      // Step 2: Try to fetch comments for this submission
-      debugInfo += "\nStep 2 - Fetching Comments for Submission:\n";
-      debugInfo += `Submission ID: ${id}\n`;
+      // Fetch comments for this submission
 
       const { data, error } = await supabase
         .from("comments")
         .select(
-          "id, content, created_at, user_id, submission_id, upvotes, downvotes, username",
+          "id, content, created_at, user_id, submission_id, upvotes, downvotes, username, is_anonymous",
         )
         .eq("submission_id", id)
+        .eq("status", "approved")
         .order("created_at", { ascending: commentSort === "oldest" });
 
-      // Show debug dialog
-      const debugDialog = document.createElement("div");
-      debugDialog.style.cssText =
-        "position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); display: flex; align-items: center; justify-content: center; z-index: 99999; pointer-events: auto;";
-
-      const dialogContent = document.createElement("div");
-      dialogContent.style.cssText =
-        "background: white; padding: 24px; border-radius: 8px; width: 100%; max-width: 42rem; margin: 16px; position: relative; color: black; pointer-events: auto;";
-
-      dialogContent.innerHTML = `
-        <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 16px;">Debug Information</h2>
-        <pre style="background: #f3f4f6; padding: 16px; border-radius: 4px; font-size: 0.875rem; overflow: auto; max-height: 400px; margin-bottom: 16px; white-space: pre-wrap; user-select: text;">${debugInfo}</pre>
-        <div style="display: flex; justify-content: flex-end; gap: 8px;">
-          <button id="copyBtn" style="padding: 8px 16px; background: #3b82f6; color: white; border-radius: 4px; cursor: pointer;">Copy</button>
-          <button id="closeBtn" style="padding: 8px 16px; background: #6b7280; color: white; border-radius: 4px; cursor: pointer;">Close</button>
-        </div>
-      `;
-
-      debugDialog.appendChild(dialogContent);
-      document.body.appendChild(debugDialog);
-
-      // Stop event propagation
-      dialogContent.addEventListener("click", (e) => {
-        e.stopPropagation();
-      });
-
-      // Add event listeners
-      const copyBtn = dialogContent.querySelector("#copyBtn");
-      const closeBtn = dialogContent.querySelector("#closeBtn");
-
-      copyBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const preElement = dialogContent.querySelector("pre");
-        navigator.clipboard.writeText(preElement.textContent);
-        copyBtn.textContent = "Copied!";
-        setTimeout(() => (copyBtn.textContent = "Copy"), 2000);
-      });
-
-      closeBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        debugDialog.remove();
-      });
-
-      // Close on backdrop click
-      debugDialog.addEventListener("click", () => {
-        debugDialog.remove();
-      });
-
       if (error) {
-        debugInfo += `❌ Error: ${error.message}\n`;
-      } else {
-        debugInfo += `✅ Success! Found ${data?.length || 0} comments for this submission\n`;
-        debugInfo += "\nComments:\n";
-        data?.forEach((comment, i) => {
-          debugInfo += `${i + 1}. ${comment.content} (by ${comment.username || "Anonymous"})\n`;
-        });
-      }
-
-      if (error) {
-        debugInfo += `❌ Error: ${error.message}\n`;
-      } else {
-        debugInfo += `✅ Success! Found ${data?.length || 0} comments for this submission\n`;
-        debugInfo += "\nComments:\n";
-        data?.forEach((comment, i) => {
-          debugInfo += `${i + 1}. ${comment.content} (by ${comment.username || "Anonymous"})\n`;
-        });
+        throw error;
       }
 
       console.log("Comments query result:", { data, error });
@@ -276,7 +213,25 @@ const SubmissionDetail = () => {
       const username =
         profile?.username || user.email?.split("@")[0] || "Anonymous";
 
-      // Insert the comment
+      // First update user profile with display name if needed
+      if (username) {
+        // Get existing profile first
+        const { data: existingProfile } = await supabase
+          .from("user_profiles")
+          .select("username, display_name, email")
+          .eq("id", user.id)
+          .single();
+
+        await supabase.from("user_profiles").upsert({
+          id: user.id,
+          username: username,
+          // Only update display_name if it doesn't exist or is the same as the old username
+          display_name: existingProfile?.display_name || username,
+          email: user.email,
+        });
+      }
+
+      // Insert the comment - it will be auto-moderated by the database trigger
       const { data, error } = await supabase
         .from("comments")
         .insert([
@@ -285,8 +240,10 @@ const SubmissionDetail = () => {
             submission_id: id,
             user_id: user.id,
             username,
+            is_anonymous: false, // Default to not anonymous, could add a toggle for this
             upvotes: 0,
             downvotes: 0,
+            // status will be set by the auto_moderate_comment trigger
           },
         ])
         .select();
@@ -315,7 +272,15 @@ const SubmissionDetail = () => {
         }
 
         await fetchSubmission();
+        // Fetch comments - this will include the newly added comment if it was auto-approved
         await fetchComments();
+
+        // Show a message if the comment needs moderation
+        if (data && data[0] && data[0].status === "pending") {
+          setCommentError(
+            "Your comment contains links or potentially inappropriate content and will be reviewed by a moderator before appearing.",
+          );
+        }
       }
     } catch (error) {
       console.error("Error adding comment:", error);
@@ -424,8 +389,10 @@ const SubmissionDetail = () => {
                 <CardContent className="pt-4">
                   <div className="flex justify-between items-start mb-2">
                     <p className="text-sm text-muted-foreground">
-                      {comment.username || "Anonymous"} •{" "}
-                      {new Date(comment.created_at).toLocaleString()}
+                      {comment.is_anonymous
+                        ? "Anonymous"
+                        : comment.username || "Anonymous"}{" "}
+                      • {new Date(comment.created_at).toLocaleString()}
                     </p>
                   </div>
                   <p className="text-foreground">{comment.content}</p>

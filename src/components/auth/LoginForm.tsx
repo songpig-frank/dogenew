@@ -29,7 +29,7 @@ const formSchema = z.object({
 });
 
 const LoginForm = () => {
-  const { signIn, signUp } = useAuth();
+  const { signIn } = useAuth();
   const [isSignUp, setIsSignUp] = React.useState(false);
   const navigate = useNavigate();
   const [error, setError] = React.useState("");
@@ -41,6 +41,101 @@ const LoginForm = () => {
       password: "",
     },
   });
+
+  const signUp = async (email: string, password: string, username: string) => {
+    try {
+      // First check if username is available
+      const { data: existingUser } = await supabase
+        .from("user_profiles")
+        .select("username")
+        .eq("username", username)
+        .single();
+
+      if (existingUser) {
+        throw new Error("Username already taken");
+      }
+
+      // Create auth user with username in metadata
+      const { data: authData, error: signUpError } = await supabase.auth.signUp(
+        {
+          email,
+          password,
+          options: {
+            data: { username },
+          },
+        },
+      );
+
+      if (signUpError) throw signUpError;
+
+      // Manually create user profile in case the trigger fails
+      if (authData.user) {
+        try {
+          // Try to create the profile with a unique username if needed
+          let uniqueUsername = username;
+          let counter = 0;
+          let profileCreated = false;
+
+          while (!profileCreated && counter < 10) {
+            // Limit attempts to avoid infinite loop
+            try {
+              const { error: upsertError } = await supabase
+                .from("user_profiles")
+                .upsert({
+                  id: authData.user.id,
+                  username: uniqueUsername,
+                  display_name: username, // Keep original username as display name
+                  email: email,
+                  created_at: new Date().toISOString(),
+                });
+
+              if (!upsertError) {
+                profileCreated = true;
+                console.log(`Profile created with username: ${uniqueUsername}`);
+              } else if (upsertError.code === "23505") {
+                // Unique violation
+                counter++;
+                uniqueUsername = `${username}${counter}`;
+                console.log(`Username taken, trying: ${uniqueUsername}`);
+              } else {
+                throw upsertError;
+              }
+            } catch (err) {
+              if (err.code === "23505") {
+                // Unique violation
+                counter++;
+                uniqueUsername = `${username}${counter}`;
+                console.log(`Username taken, trying: ${uniqueUsername}`);
+              } else {
+                throw err;
+              }
+            }
+          }
+
+          // Also create user role
+          await supabase.from("user_roles").upsert({
+            user_id: authData.user.id,
+            role: "user",
+          });
+        } catch (profileError) {
+          console.warn("Error creating profile manually:", profileError);
+          // Continue anyway as the auth user was created
+        }
+      }
+
+      // Log the successful signup
+      console.log("User signed up successfully:", {
+        id: authData.user?.id,
+        email: authData.user?.email,
+        username,
+      });
+
+      return authData;
+    } catch (error) {
+      console.error("Error in signUp:", error);
+      throw error;
+    }
+  };
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     const { emailOrUsername, password, username } = values;
@@ -60,11 +155,20 @@ const LoginForm = () => {
       navigate("/");
     } catch (error) {
       console.error("Auth error:", error);
-      setError(
-        error instanceof Error
-          ? error.message
-          : "An error occurred during authentication",
-      );
+
+      // Check if the error message indicates a blocked account
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (
+        errorMessage.includes("blocked") ||
+        errorMessage.includes("User account is blocked")
+      ) {
+        setError(
+          "This account has been blocked. Please contact an administrator.",
+        );
+      } else {
+        setError(errorMessage || "An error occurred during authentication");
+      }
     }
   };
 

@@ -41,6 +41,13 @@ A mobile-first web platform enabling citizens to submit, track, and discuss gove
 - [ ] Donations page implementation
 - [ ] AI Help page implementation
 
+### Recent Fixes & Improvements
+- [x] Enhanced Top Community Feedback to properly display submissions with highest engagement scores
+- [x] Improved moderation tools for comments and submissions
+- [x] Fixed user management with better blocking/unblocking functionality
+- [x] Enhanced role management for admins and moderators
+- [x] Added comprehensive user statistics tracking
+
 ### Authentication
 - [ ] Email verification flow
 - [ ] Password reset flow testing

@@ -11,6 +11,10 @@ interface Submission {
   category: "Praise" | "Complaint" | "Recommendation";
   status: "pending" | "approved" | "rejected";
   created_at: string;
+  username?: string;
+  email?: string;
+  user_role?: "admin" | "moderator" | "user";
+  is_anonymous?: boolean;
 }
 
 const SubmissionModeration = () => {
@@ -31,11 +35,61 @@ const SubmissionModeration = () => {
       }
 
       console.log("Fetching with session:", session);
-      const { data, error } = await supabase
-        .from("submissions")
-        .select("*")
-        .eq("status", "pending")
-        .order("created_at", { ascending: false });
+      // Try to use the RPC function first
+      const { data: rpcData, error: rpcError } = await supabase.rpc(
+        "get_pending_submissions_with_emails",
+      );
+
+      console.log("RPC data for submissions:", rpcData);
+
+      if (rpcError) {
+        console.error(
+          "RPC function failed, falling back to regular query:",
+          rpcError,
+        );
+        // Fall back to regular query
+        const { data, error } = await supabase
+          .from("submissions")
+          .select(
+            "*, user_profiles!submissions_user_id_fkey(username, display_name, email), user_roles!user_roles_user_id_fkey(role), auth.users!submissions_user_id_fkey(email)",
+          )
+          .eq("status", "pending")
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+        return data;
+      }
+
+      // Use the RPC data
+      const data = rpcData;
+
+      // Process the data to flatten the structure
+      if (data) {
+        data.forEach((submission) => {
+          if (submission.user_profiles) {
+            submission.username =
+              submission.user_profiles.display_name ||
+              submission.user_profiles.username;
+            submission.email = submission.user_profiles.email;
+          } else {
+            // If no user profile, try to get username from user_id
+            submission.username = submission.user_id
+              ? submission.user_id.substring(0, 8)
+              : "Anonymous";
+          }
+          // Get email from auth.users if not in user_profiles
+          if (!submission.email && submission.users) {
+            submission.email = submission.users.email;
+          }
+          if (submission.user_roles) {
+            submission.user_role = submission.user_roles.role;
+          }
+          // Clean up the nested objects
+          delete submission.user_profiles;
+          delete submission.user_roles;
+          delete submission.users;
+        });
+      }
 
       if (error) {
         console.error("Supabase error:", error);
@@ -105,7 +159,13 @@ const SubmissionModeration = () => {
               <CardContent>
                 <div className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    From: {submission.user_id ? "Registered User" : "Anonymous"}
+                    From:{" "}
+                    {submission.is_anonymous
+                      ? "Anonymous"
+                      : submission.username || "Anonymous"}{" "}
+                    <span className="text-blue-500">
+                      (Admin only: {submission.email || "No email available"})
+                    </span>
                   </p>
                   <p className="mb-4">{submission.description}</p>
                   <p className="text-sm text-muted-foreground">

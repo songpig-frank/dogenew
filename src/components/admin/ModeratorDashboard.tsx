@@ -43,16 +43,41 @@ const ModeratorDashboard = () => {
 
       if (commError) throw commError;
 
+      // Get user emails for admin display
+      const userIds = new Set(
+        [
+          ...(submissions?.map((s) => s.user_id) || []),
+          ...(comments?.map((c) => c.user_id) || []),
+        ].filter(Boolean),
+      );
+
+      let emailMap = {};
+      if (userIds.size > 0) {
+        // Get emails directly using the new function
+        for (const userId of Array.from(userIds)) {
+          if (userId) {
+            const { data: email } = await supabase.rpc("get_auth_email", {
+              user_id: userId,
+            });
+            if (email) {
+              emailMap[userId] = email;
+            }
+          }
+        }
+      }
+
       // Combine and format data
       const formattedQueue = [
         ...(submissions?.map((s) => ({
           ...s,
           type: "submission" as const,
           content: s.description,
+          email: s.email || emailMap[s.user_id],
         })) || []),
         ...(comments?.map((c) => ({
           ...c,
           type: "comment" as const,
+          email: c.email || emailMap[c.user_id],
         })) || []),
       ].sort(
         (a, b) =>
@@ -76,13 +101,45 @@ const ModeratorDashboard = () => {
     newStatus: "approved" | "rejected",
   ) => {
     try {
-      const table = item.type === "submission" ? "submissions" : "comments";
-      const { error } = await supabase
-        .from(table)
-        .update({ status: newStatus })
-        .eq("id", item.id);
+      if (item.type === "comment" && newStatus === "rejected") {
+        // Try the simple_reject_comment function first (doesn't use moderated_at)
+        const { error: simpleError } = await supabase.rpc(
+          "simple_reject_comment",
+          {
+            comment_id: item.id,
+          },
+        );
 
-      if (error) throw error;
+        if (simpleError) {
+          console.error("simple_reject_comment failed:", simpleError);
+
+          // Try admin_reject_comment as fallback
+          const { error } = await supabase.rpc("admin_reject_comment", {
+            comment_id: item.id,
+          });
+
+          if (error) {
+            console.error("admin_reject_comment failed:", error);
+
+            // Last resort: direct update without moderated_at
+            const { error: directError } = await supabase
+              .from("comments")
+              .update({ status: newStatus })
+              .eq("id", item.id);
+
+            if (directError) throw directError;
+          }
+        }
+      } else {
+        // For submissions or approvals, use the regular update without moderated_at
+        const table = item.type === "submission" ? "submissions" : "comments";
+        const { error } = await supabase
+          .from(table)
+          .update({ status: newStatus })
+          .eq("id", item.id);
+
+        if (error) throw error;
+      }
       fetchQueue();
     } catch (error) {
       console.error("Error updating status:", error);
@@ -133,6 +190,9 @@ const ModeratorDashboard = () => {
                       <div className="space-y-2">
                         <p className="text-sm text-muted-foreground">
                           From: {item.username || "Anonymous"}
+                          <span className="ml-2 text-blue-500">
+                            (Admin only: {item.email || "No email available"})
+                          </span>
                         </p>
                         <p className="mb-4">{item.content}</p>
                       </div>

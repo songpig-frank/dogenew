@@ -1,9 +1,13 @@
 export interface UserProfile {
   id: string;
-  username: string;
+  username?: string;
   display_name?: string;
-  is_anonymous: boolean;
+  email?: string;
+  is_anonymous?: boolean;
   created_at: string;
+  blocked?: boolean;
+  blocked_reason?: string;
+  blocked_at?: string | null;
 }
 
 export interface Comment {
@@ -15,6 +19,7 @@ export interface Comment {
   status: "pending" | "approved" | "rejected";
   is_anonymous: boolean;
   username?: string;
+  email?: string;
   upvotes: number;
   downvotes: number;
 }
@@ -26,6 +31,7 @@ export interface Submission {
   category: "Praise" | "Complaint" | "Recommendation";
   user_id: string;
   username?: string;
+  email?: string;
   is_anonymous: boolean;
   status: "pending" | "approved" | "rejected";
   likes: number;

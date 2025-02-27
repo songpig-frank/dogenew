@@ -127,7 +127,11 @@ const SubmissionsList = () => {
                       {submission.title}
                     </CardTitle>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Posted by {submission.username || "Anonymous"} •{" "}
+                      Posted by{" "}
+                      {submission.is_anonymous
+                        ? "Anonymous"
+                        : submission.username || "Anonymous"}{" "}
+                      •{" "}
                       {new Date(submission.created_at).toLocaleString("en-US", {
                         timeZone: "America/Chicago",
                       })}
