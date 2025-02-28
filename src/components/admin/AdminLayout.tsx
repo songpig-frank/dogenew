@@ -11,6 +11,7 @@ import {
   LogOut,
   MessageCircle,
   Youtube,
+  DollarSign,
 } from "lucide-react";
 
 const AdminLayout = () => {
@@ -55,6 +56,7 @@ const AdminLayout = () => {
     { icon: Users, label: "Users", href: "/admin/users" },
     { icon: Youtube, label: "YouTube Manager", href: "/admin/youtube" },
     { icon: Youtube, label: "Channel Management", href: "/admin/channels" },
+    { icon: DollarSign, label: "Ad Manager", href: "/admin/ads" },
     { icon: Settings, label: "Settings", href: "/admin/settings" },
   ];
 

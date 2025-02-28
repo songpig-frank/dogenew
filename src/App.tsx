@@ -19,6 +19,7 @@ import CommentModeration from "./components/admin/CommentModeration";
 import UserManagement from "./components/admin/UserManagement";
 import YouTubeManager from "./components/admin/YouTubeManager";
 import ChannelManagement from "./components/admin/ChannelManagement";
+import AdManager from "./components/admin/AdManager";
 
 function App() {
   return (
@@ -51,6 +52,7 @@ function App() {
                 <Route path="users" element={<UserManagement />} />
                 <Route path="youtube" element={<YouTubeManager />} />
                 <Route path="channels" element={<ChannelManagement />} />
+                <Route path="ads" element={<AdManager />} />
                 <Route path="settings" element={<div>Admin Settings</div>} />
               </Route>
             </Route>

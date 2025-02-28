@@ -38,11 +38,52 @@ const VideoCarousel = ({ videos: propVideos }: VideoCarouselProps) => {
         if (propVideos && propVideos.length > 0) {
           setVideos(propVideos);
         } else {
-          // Otherwise fetch from the database
-          const featuredVideos = await getFeaturedVideos();
-          console.log("Fetched featured videos for carousel:", featuredVideos);
-          if (featuredVideos && featuredVideos.length > 0) {
-            setVideos(featuredVideos);
+          // Direct fetch from Supabase to bypass any API issues
+          const response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/featured_videos?select=*&order=created_at.desc`,
+            {
+              method: "GET",
+              headers: {
+                "Content-Type": "application/json",
+                apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+              },
+            },
+          );
+
+          if (!response.ok) {
+            throw new Error(`Failed to fetch videos: ${response.statusText}`);
+          }
+
+          const data = await response.json();
+          console.log("Direct fetch featured videos:", data);
+
+          if (data && data.length > 0) {
+            const formattedVideos = data.map((item: any) => {
+              let keywords = [];
+              try {
+                if (typeof item.keywords === "string") {
+                  keywords = JSON.parse(item.keywords);
+                } else if (Array.isArray(item.keywords)) {
+                  keywords = item.keywords;
+                }
+              } catch (e) {
+                console.warn("Error parsing keywords:", e);
+              }
+
+              return {
+                id: item.video_id,
+                title: item.title,
+                channelTitle: item.channel_title,
+                publishedAt: item.published_at,
+                thumbnailUrl: item.thumbnail_url,
+                viewCount: item.view_count,
+                platform: item.platform || "youtube",
+                keywords: keywords,
+              };
+            });
+
+            setVideos(formattedVideos);
           } else {
             // If no videos returned, use mock data
             console.log("No videos found in database, using mock data");
@@ -126,8 +167,8 @@ const VideoCarousel = ({ videos: propVideos }: VideoCarouselProps) => {
 
     fetchVideos();
 
-    // Set up an interval to refresh videos every 5 minutes
-    const refreshInterval = setInterval(fetchVideos, 5 * 60 * 1000);
+    // Set up an interval to refresh videos every 30 seconds to ensure we get the latest videos
+    const refreshInterval = setInterval(fetchVideos, 30 * 1000);
 
     // Clean up the interval when component unmounts
     return () => clearInterval(refreshInterval);
@@ -183,7 +224,10 @@ const VideoCarousel = ({ videos: propVideos }: VideoCarouselProps) => {
                 <Card>
                   <CardContent
                     className="flex aspect-video items-center justify-center p-0 relative group cursor-pointer"
-                    onClick={() => setActiveVideo(video.id)}
+                    onClick={() => {
+                      console.log("Opening video:", video);
+                      setActiveVideo(video.id);
+                    }}
                   >
                     <img
                       src={video.thumbnailUrl}

@@ -1,64 +1,113 @@
 import React from "react";
-import Navbar from "./layout/Navbar";
 import TrendingSection from "./trending/TrendingSection";
 import TopCommunityFeedback from "./trending/TopCommunityFeedback";
-import { useTheme } from "@/lib/utils";
+import AdBanner from "./ads/AdBanner";
+import { Button } from "./ui/button";
+import { Link } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
 
 interface HomeProps {
   initialTheme?: "light" | "dark";
 }
 
+// Component to fetch and display in-content ads
+const InContentAd = () => {
+  const [ad, setAd] = React.useState<{
+    id: string;
+    adCode: string;
+    imageUrl: string;
+    linkUrl: string;
+  } | null>(null);
+
+  React.useEffect(() => {
+    const fetchInContentAd = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("ads")
+          .select("*")
+          .eq("type", "inline")
+          .eq("position", "content")
+          .eq("active", true)
+          .limit(1)
+          .single();
+
+        if (!error && data) {
+          setAd({
+            id: data.id,
+            adCode: data.ad_code || "",
+            imageUrl: data.image_url || "",
+            linkUrl: data.link_url || "",
+          });
+
+          // Record impression
+          await supabase.rpc("record_ad_impression", { ad_id: data.id });
+        }
+      } catch (error) {
+        console.error("Error fetching in-content ad:", error);
+      }
+    };
+
+    fetchInContentAd();
+  }, []);
+
+  if (!ad) return null;
+
+  return (
+    <AdBanner
+      position="inline"
+      adCode={ad.adCode}
+      fallbackImage={
+        ad.imageUrl ||
+        "https://via.placeholder.com/728x90?text=Support+Our+Mission"
+      }
+      fallbackUrl={ad.linkUrl || "/donations"}
+      className="my-8"
+      onClick={() => {
+        if (ad.id) {
+          supabase.rpc("record_ad_click", { ad_id: ad.id });
+        }
+      }}
+    />
+  );
+};
+
 const Home = ({ initialTheme = "light" }: HomeProps) => {
-  const [isDarkMode, setIsDarkMode] = React.useState(initialTheme === "dark");
-
-  const handleThemeToggle = () => {
-    setIsDarkMode(!isDarkMode);
-    // In a real implementation, this would update the theme in your theme provider
-  };
-
-  const handleDonateClick = () => {
-    // Implement donation logic or navigation
-    console.log("Donate clicked");
-  };
-
   return (
     <div className="bg-background">
       {/* Main content */}
-      <main className="pt-16">
-        {" "}
-        {/* Add padding-top to account for fixed navbar */}
-        <div className="container mx-auto px-4">
-          {/* Hero Section */}
-          <section className="py-16 text-center">
-            <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-6">
-              Welcome to DOGEcuts.org
-            </h1>
-            <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
-              Help improve government efficiency by sharing your feedback,
-              suggestions, and experiences.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <a
-                href="/submit"
-                className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
-              >
-                Submit Feedback
-              </a>
-              <a
-                href="/about"
-                className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
-              >
-                Learn More
-              </a>
-            </div>
-          </section>
+      <main>
+        {/* Hero Section */}
+        <section className="py-8 md:py-16 text-center">
+          <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-6">
+            Welcome to DOGEcuts.org
+          </h1>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
+            Help improve government efficiency by sharing your feedback,
+            suggestions, and experiences.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Button asChild size="lg">
+              <Link to="/submit">Submit Feedback</Link>
+            </Button>
+            <Button asChild variant="outline" size="lg">
+              <Link to="/about">Learn More</Link>
+            </Button>
+          </div>
+        </section>
 
-          {/* Top Community Feedback Section */}
+        {/* In-content ad banner */}
+        <InContentAd />
+
+        {/* Top Community Feedback Section - consolidated in one place */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold mb-6 text-center">
+            Top Community Feedback
+          </h2>
           <TopCommunityFeedback />
+        </section>
 
-          {/* Trending Section */}
-          <TrendingSection />
-        </div>
+        {/* Trending Section with videos */}
+        <TrendingSection />
       </main>
     </div>
   );
